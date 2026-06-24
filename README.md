@@ -6,7 +6,7 @@ A curated collection of production-level architecture concepts, core debugging s
 
 Click on any module below to view the full deep-dive interview questions and production scenarios:
 
-### 📁 [Module 1: Advanced RAG Pipelines & Retrieval Mechanics](questions/1_rag_pipelines.md)
+### 📁 [Module 1: Advanced RAG Pipelines & Retrieval Mechanics](questions/1_rag_pipeline.md)
 * Vector Database Lifecycle, Semantic Search Bottlenecks, and Groundedness Guardrails.
 
 ### 📁 [Module 2: Agentic Workflows & Multi-Tool Orchestration](questions/2_agentic_ai.md)
