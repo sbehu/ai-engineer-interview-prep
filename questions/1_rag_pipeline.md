@@ -71,3 +71,117 @@ To understand why a **Standard Linear Chain** fails without Self-Correction, con
 * **Why it's better:** It introduces **self-correction**. If the first search pulls up the wrong document, the agent can recognize the mistake, drop the bad context, rewrite the search query, and search again until it finds the right information.
 
 
+---
+
+### Q5: What are "Reflection Tokens" (or Critique Tokens) in Agentic RAG, and how do they work in simple terms?
+
+**Answer:**
+* **What they are:** Reflection tokens are special text tags (like custom keywords or markers) that an AI agent outputs to grade its own work during a search.
+* **How they work:** Instead of just spitting out an answer, the model is trained or prompted to output tags like `[Retrieve]`, `[Is-Relevant]`, or `[Is-Supported]`.
+* **The Steps:**
+  1. **`[Retrieve]`**: The agent realizes it doesn't know a fact, so it outputs this token. The code sees this, pauses the text generation, and searches the database.
+  2. **`[Is-Relevant]`**: The agent looks at the fetched text. If the text is junk, it outputs `[Not-Relevant]`, tells the code to throw it away, and rewrites the search query.
+  3. **`[Is-Supported]`**: Right before showing you the final answer, the agent checks its own response against the document to ensure it didn't hallucinate.
+
+
+  ---
+
+
+---
+
+### Q6: How does an Agentic RAG pipeline handle contextual follow-up questions (e.g., "Give credit rating for same year for this")?
+
+**Answer:**
+* **The Problem:** Databases are "stateless." If a user follows up with *"Give credit rating for same year for this"*, a standard search will fail because the database doesn't know what "this" or "same year" means.
+* **The Solution (Query Rewriting):** An Agentic RAG pipeline uses its short-term memory to read the conversation history and run **Coreference Resolution**.
+* **How it works step-by-step:**
+  1. **History saved:** The agent remembers the previous turn was about *2023* and *AmEx*.
+  2. **The Rewrite:** Before searching, a prompt rewrites the pronoun-heavy question into a clean, standalone search query.
+  3. **The Result:** The prompt transforms the question into: **"American Express credit rating 2023"** and uses that to fetch the perfect document.
+
+
+
+---
+
+### Q7: What is "Agentic Routing" in a production RAG pipeline?
+
+**Answer:**
+* **What it is:** Instead of forcing every single user query through a costly and slow database search, an Agentic Router acts like an intelligent traffic cop at the very front of the pipeline to send the query to the best possible destination.
+* **How it works:** The router evaluates the intent of the incoming message and chooses a path. For example:
+  * If the user says *"Hello"*, it routes to a **Chitchat branch** (skipping the database completely to save money and latency).
+  * If the user asks *"What is my current account balance?"*, it routes to a **SQL Database/API tool**.
+  * If the user asks *"What are the company's internal travel compliance rules?"*, it routes to the **Vector Database (RAG)**.
+* **Why it matters:** It drastically reduces latency, prevents the system from pulling useless context, and saves significant API costs.
+  
+
+---
+
+
+---
+
+### Q8: What is "Semantic Chunking," and why is it superior to fixed-size character chunking? Provide a detailed production scenario.
+
+**Answer:**
+* **The Old Way (Fixed-Size Chunking):** Breaking documents into chunks based purely on a hard character or token limit (e.g., exactly 100 or 500 characters). This blindly chops text in half, destroying the semantic cohesion of contiguous sentences.
+* **The Advanced Way (Semantic Chunking):** The data pipeline evaluates the mathematical *meaning* and structural *flow* of sequential text. It calculates moving-window semantic embedding distance thresholds to dynamically draw chunk boundaries only when a topic shifts.
+
+#### 💡 Production-Level Architectural Scenario
+Consider processing the following raw paragraph from a technology firm's quarterly disclosure:
+> *"Our cloud infrastructure revenue grew by 45% this quarter due to enterprise adoption. AI workloads accounted for a massive portion of this scaling demand. In completely separate news, the board of directors appointed a new Chief Sustainability Officer to manage carbon offset goals. They also approved a 10-million-dollar budget for green energy initiatives."*
+
+##### ❌ The Naive Implementation: Fixed-Size Character Splitting (100 Characters)
+A naive string-slicing mechanism ignores token context bounds, splitting precisely mid-word:
+* **Chunk 1:** `"Our cloud infrastructure revenue grew by 45% this quarter due to enterprise adoption. AI workloa"`
+* **Chunk 2:** `"ds accounted for a massive portion of this scaling demand. In completely separate news, the board"`
+* **The Failure Mode:** A search query asking *"What factors drove cloud infrastructure scaling?"* will yield poor vector alignment. Chunk 1 truncates the core driver, while Chunk 2 isolates the phrase `"scaling demand"` from its context entity (Cloud/AI). Search relevancy degrades.
+
+##### 🛠️ The Advanced Implementation: Semantic Processing Step-by-Step
+
+**Step 1: Sentence Tokenization & Vectorization**  
+The pipeline segments the block into native sentences and forwards them to a standard embedding model:
+1. **Sentence 1:** *"Our cloud infrastructure revenue grew by 45% this quarter due to enterprise adoption."* ($\rightarrow$ Vector $\vec{A}$)
+2. **Sentence 2:** *"AI workloads accounted for a massive portion of this scaling demand."* ($\rightarrow$ Vector $\vec{B}$)
+3. **Sentence 3:** *"In completely separate news, the board of directors appointed a new Chief Sustainability Officer to manage carbon offset goals."* ($\rightarrow$ Vector $\vec{C}$)
+4. **Sentence 4:** *"They also approved a 10-million-dollar budget for green energy initiatives."* ($\rightarrow$ Vector $\vec{D}$)
+
+**Step 2: Adjacency Metric Evaluation**  
+The system computes the Cosine Distance ($1 - \text{Cosine Similarity}$) between consecutive sentence vectors:
+
+<table>
+  <thead>
+    <tr>
+      <th align="left">Vector Pair Comparison</th>
+      <th align="left">Semantic Context Analysis</th>
+      <th align="left">Cosine Distance (0.0 to 1.0)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>S1 ↔ S2</b></td>
+      <td>Both strings track financial/compute scaling inside cloud architectures.</td>
+      <td><b>0.12</b> (Highly Similar / Keep Grouped)</td>
+    </tr>
+    <tr>
+      <td><b>S2 ↔ S3</b></td>
+      <td>Context undergoes a sudden pivot from AI infrastructure to corporate governance.</td>
+      <td><b>0.85</b> (Massive Distance Anomaly)</td>
+    </tr>
+    <tr>
+      <td><b>S3 ↔ S4</b></td>
+      <td>Both strings evaluate corporate sustainability and green budgets.</td>
+      <td><b>0.15</b> (Highly Similar / Keep Grouped)</td>
+    </tr>
+  </tbody>
+</table>
+
+<br/>
+
+**Step 3: Distance Threshold Segmentation**  
+With a target threshold limit set to `0.60`, the system spots the `0.85` anomaly spike between Sentence 2 and Sentence 3. The chunker closes out the current index and initializes a new metadata block.
+
+#### 🎯 Clean Structural Vector Database Payload
+Your index now receives clean, isolated, self-contained semantic vectors:
+* **Vector Chunk 1 (Tech/Finance Dimension):**  
+  *"Our cloud infrastructure revenue grew by 45% this quarter due to enterprise adoption. AI workloads accounted for a massive portion of this scaling demand."*
+* **Vector Chunk 2 (Sustainability/Corporate Governance Dimension):**  
+  *"In completely separate news, the board of directors appointed a new Chief Sustainability Officer to manage carbon offset goals. They also approved a 10-million-dollar budget for green energy initiatives."*
